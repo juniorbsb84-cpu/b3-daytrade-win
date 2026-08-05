@@ -21,7 +21,10 @@ from src.backtest import features
 from src.ingest.bars import load_bars
 from src.strategies import families
 
-SYMBOL, TF = "WIN$N", "M5"
+SYMBOL, TF = "WIN$N", "M15"  # producao roda M15 -- ver config/live_config.json.
+# Auditoria externa de 05/08/2026: este teste testava M5, um timeframe que a
+# carteira em producao nao usa (M5 foi reprovado por dado, ver RESULTADOS.md).
+# O teste mais caro do projeto nunca exercitou o timeframe que de fato opera.
 SS, SE = "09:00", "18:20"
 LOOKBACK = 8000          # mesmo valor usado pelo motor (LiveEngine.bars_lookback)
 

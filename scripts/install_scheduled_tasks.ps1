@@ -46,4 +46,30 @@ $t3 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Saturday -At 09:00
 New-B3Task "B3_ManutencaoSemanal" "scripts\12_weekly_maintenance.py" "" $t3 `
     "Baixa dados novos, revalida e recongela a configuracao operacional"
 
+# 4) L2 (book) do contrato vigente do WIN -- so leitura, sem ordem
+$t4 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 08:55
+New-B3Task "B3_HarvestL2WIN" "scripts\13_harvest_l2_win.py" "" $t4 `
+    "Captura continua do book L2 (DOM) do contrato vigente do WIN"
+
+# 5) dado oficial diario da B3 (PricRpt) -- FORA deste repositorio de proposito.
+# O pipeline de extracao (extrator_win.py/backfill_win.py) e a documentacao em
+# EXTRACAO_DADOS_B3.md moram em "New OpenCode Project" por decisao explicita do
+# usuario -- nao mover para dentro do projeto. Auditoria externa de 05/08/2026
+# apontou (com razao) que isso quebra reproducibilidade a partir deste repo; a
+# troca e deliberada, nao descuido. Ajuste o caminho se a pasta mudar de lugar.
+$dadosB3 = "$env:USERPROFILE\OneDrive\Documentos\New OpenCode Project\data\harvest_diario_win.py"
+if (Test-Path $dadosB3) {
+    $t5 = New-ScheduledTaskTrigger -Daily -At 08:00
+    $action5 = New-ScheduledTaskAction -Execute $pythonw -Argument "`"$dadosB3`"" `
+        -WorkingDirectory (Split-Path -Parent $dadosB3)
+    $settings5 = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+    Register-ScheduledTask -TaskName "B3_HarvestWINDiario" -Action $action5 -Trigger $t5 `
+        -Settings $settings5 -Description "PricRpt oficial da B3 -> win_diario.db (fora do repo)" `
+        -Force | Out-Null
+    Write-Host "  registrada: B3_HarvestWINDiario"
+} else {
+    Write-Host "  AVISO: $dadosB3 nao encontrado -- B3_HarvestWINDiario NAO registrada"
+}
+
 Write-Host "`npronto. Confira com: Get-ScheduledTask -TaskName 'B3_*'"

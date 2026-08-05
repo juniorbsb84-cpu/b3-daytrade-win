@@ -139,7 +139,7 @@ onde da para operar.
 
 ## Etapa 8 -- validacao do motor de execucao
 
-25 testes automatizados, todos passando:
+52 testes automatizados, todos passando:
 
 | Arquivo | O que trava |
 |---|---|
@@ -147,14 +147,15 @@ onde da para operar.
 | `tests/test_netting.py` (10) | livro virtual: posicao alvo, lado do preco no stop, prioridade stop>tempo, stop de catastrofe |
 | `tests/test_no_lookahead.py` (3) | features recalculadas com historico truncado batem valor a valor |
 | `tests/test_config_roundtrip.py` (2) | a config operacional reproduz o sinal do backtest |
-| `tests/test_live_parity.py` (2) | a visao do motor ao vivo == a visao do backtest |
+| `tests/test_live_parity.py` (2) | a visao do motor ao vivo == a visao do backtest, em M15 (producao) |
+| `tests/test_auditoria.py` (27) | falhas achadas em duas auditorias externas de 05/08/2026 |
 
-**Dois bugs reais foram pegos por esses testes**, nao por revisao de codigo:
-
-1. O filtro de dias curtos descartava o pregao em andamento -- o motor ficaria
-   sem gerar sinal nenhum ate ~10:40, justamente nos setups de abertura.
-2. Com o mercado fechado o terminal devolve bid/ask zerados; o motor calculava
-   stop e alvo sobre preco zero.
+**Bugs reais foram pegos por teste e por auditoria**, nao por revisao casual de
+codigo -- ver `CLAUDE.md`, secao "Armadilhas que ja custaram bug", para a lista
+completa (dia corrente descartado, bid/ask zerado fora do pregao, dois motores
+concorrentes, schema do log de trades, ciclo em conta netting, stop de
+catastrofe sem confirmacao, `max_per_day` nao persistido, sinal de barra do dia
+anterior, livro esvaziado antes de confirmar a zeragem).
 
 ### Replay do motor de verdade (`scripts/09_replay_session.py`)
 
@@ -170,20 +171,30 @@ nenhum pregao terminou com posicao aberta
 
 ## Configuracao congelada
 
-`config/live_config.json` -- WIN$N, M15, risco agregado R$3.000 por trade:
+`config/live_config.json` -- WIN$N, M15, **banca de referencia R$5.000**
+(recalibrado em 05/08/2026), 1 contrato por perna, 4 pernas cortadas por
+orcamento de risco agregado:
 
-| Familia | peso | risco | Sharpe de treino | n trades |
-|---|---:|---:|---:|---:|
-| BarMomentum | 0,26 | R$ 791 | 0,87 | 377 |
-| GapPlay | 0,20 | R$ 599 | 0,75 | 634 |
-| VWAPRevert | 0,19 | R$ 559 | 0,35 | 494 |
-| EmaTrend | 0,17 | R$ 501 | 0,87 | 464 |
-| ORB | 0,09 | R$ 282 | 1,02 | 1.155 |
-| VolBreak | 0,09 | R$ 268 | 1,00 | 816 |
+| Familia | risk_brl | max_qty |
+|---|---:|---:|
+| ORB | R$ 460 | 1 |
+| VolBreak | R$ 350 | 1 |
+| VWAPRevert | R$ 300 | 1 |
+| EmaTrend | R$ 300 | 1 |
 
-Limites: kill switch diario R$6.000 (o pior dia OOS foi R$-858 na escala de
-R$900, ou ~R$-2.860 nesta escala), rede de stop de catastrofe em R$4.000 de
-prejuizo aberto, teto de 60 contratos liquidos, zeragem as 17:30.
+BarMomentum e GapPlay saem por orcamento de risco agregado (teto de 15% da
+banca, soma do p95 do stop de 1 contrato) -- com 1 contrato, o minimo
+indivisivel do WIN, as 6 pernas originais zeram uma banca de R$5.000 na serie
+historica. A tabela antiga (6 pernas, risco R$3.000, pesos por Sharpe de
+treino) esta preservada em
+`config/live_config_6pernas_R3000_backup_2026-08-05.json`.
+
+Limites: kill switch diario R$450 (9% da banca), rede de stop de catastrofe em
+R$1.400 de prejuizo aberto (28%), teto de 4 contratos liquidos, zeragem as
+17:30. **Divida de validacao**: o Monte Carlo OOS acima (Sharpe 1,03, p<0,004)
+foi rodado para a carteira de 6 pernas -- nao vale automaticamente para esta de
+4; ver `CLAUDE.md` para o walk-forward proprio desta carteira e suas
+limitacoes conhecidas.
 
 ---
 

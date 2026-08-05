@@ -99,11 +99,39 @@ desenho anterior, valido so em conta hedging, e foi removido.
    evento `protective_stop` gravado no CSV com `ok`/`retcode`. **Nao verificado
    com posicao real apos a correcao** -- proxima vez que houver posicao aberta,
    confirmar que o evento aparece em `logs/trades_live.csv`.
+8. **`max_per_day` por perna nao sobrevivia a um restart no MEIO do dia.**
+   `lg.entries_today` e atributo de `LegCfg`, reconstruido em 0 toda vez que o
+   processo sobe. O livro virtual (`state.book`) so guarda pernas ABERTAS --
+   uma perna que ja entrou e ja SAIU no dia some sem deixar rastro de que usou
+   sua cota. Um restart liberava nova entrada alem de `max_per_day`. Corrigido:
+   a contagem por familia agora vive em `EngineState.legs_done` (campo que ja
+   existia no schema, nunca conectado) e e restaurada em `_load_state`.
+9. **Sinal calculado em cima da barra de ONTEM podia virar entrada de HOJE.**
+   Entre a abertura do pregao e o fechamento da 1a barra M15 (09:00-09:15), a
+   ultima barra fechada disponivel ainda e a de ontem (~18:15). O gate de
+   horario de entrada usava `_mod(now)` (hora ATUAL), nao o mod da PROPRIA
+   barra do sinal -- por isso passava. O backtest nunca gera essa entrada
+   (`make_intents` filtra pelo mod da barra do sinal, sempre maior que
+   qualquer `last_entry_min`). Corrigido com `ts.normalize() != now.normalize()`
+   logo apos pegar a ultima barra fechada.
+10. **`_flatten()` esvaziava o livro virtual ANTES de saber se a ordem de
+    fechar a posicao seria aceita.** Numa rejeicao (desconexao, erro do
+    broker), o livro ja ficava vazio -- `_protective_stop` para de agir quando
+    `not book.legs`, e o motor passa a achar que esta zerado exatamente quando
+    a posicao real continua aberta e SEM rede nenhuma no servidor. Corrigido:
+    `_reconcile()` agora devolve sucesso/falha; `_flatten()` so da `clear()`
+    quando confirma, e devolve as pernas ao livro na falha.
+
+Os itens 1-7 vieram da 1a auditoria (05/08, tarde); 8-10 de uma 2a auditoria
+externa (05/08, noite) que revisou o codigo linha a linha e achou tres bugs
+reais que a primeira passagem nao pegou -- inclusive porque `test_live_parity.py`
+testava M5 (reprovado por dado) em vez de M15 (producao), entao o teste mais
+caro do projeto nunca exercitou o timeframe que de fato roda. Corrigido junto.
 
 Todos foram pegos por teste ou auditoria, nao por leitura casual de codigo.
 Mantenha os testes.
 
-## Testes (46, todos devem passar antes de qualquer deploy)
+## Testes (52, todos devem passar antes de qualquer deploy)
 
 | Arquivo | O que trava |
 |---|---|
@@ -112,7 +140,7 @@ Mantenha os testes.
 | `tests/test_no_lookahead.py` (3) | features recalculadas com historico truncado batem valor a valor |
 | `tests/test_config_roundtrip.py` (2) | a config operacional reproduz o sinal do backtest |
 | `tests/test_live_parity.py` (2) | a visao do motor ao vivo == a visao do backtest |
-| `tests/test_auditoria.py` (21) | as falhas da auditoria de 05/08: lock de instancia unica, lock orfao, schema do log de trades, stop de catastrofe sem confirmacao, ciclo em conta netting |
+| `tests/test_auditoria.py` (27) | as falhas da auditoria de 05/08: lock de instancia unica, lock orfao, schema do log de trades, stop de catastrofe sem confirmacao, ciclo em conta netting, quota por perna, sinal de barra de outro dia, zeragem sem confirmacao |
 
 Ao mexer em features ou estrategia: rodar `test_live_parity.py` **e** um replay
 de 25 pregoes (`scripts/09_replay_session.py --days 25`) antes de considerar
@@ -129,7 +157,7 @@ python tests/test_netting.py                    # 10 testes do livro virtual
 python tests/test_no_lookahead.py               # 3 testes de vazamento de futuro
 python tests/test_config_roundtrip.py           # 2 testes de config
 python tests/test_live_parity.py                # 2 testes de paridade ao vivo
-python tests/test_auditoria.py                  # 21 testes das falhas da auditoria
+python tests/test_auditoria.py                  # 27 testes das falhas da auditoria
 python scripts/03_run_sweep.py                  # varredura ampla (6 familias x 61 ativos)
 python scripts/04_win_portfolio.py              # carteira no instrumento vencedor
 python scripts/05_montecarlo.py                 # distribuicao nula com a busca inteira
@@ -237,11 +265,16 @@ Foi esse teto que motivou usar **M15 como base**: 5 anos contra 3,5 em M5.
 
 ## Divida tecnica conhecida
 
-* **O projeto nao esta sob controle de versao.** Nao ha `.git`. Um sistema que
-  manda ordem automaticamente sem historico de mudanca e sem `git bisect` e
-  fragil -- qualquer regressao vira arqueologia manual.
-* `entries_today` no estado conta entradas do dia inclusive de execucoes
-  descartadas (ex.: as da conta errada em 05/08). Nao afeta risco (o gate real
-  e `max_per_day` por perna), mas o numero exibido pode confundir.
+* **Controle de versao: resolvido em 05/08/2026.** Repositorio privado no
+  GitHub (`b3-daytrade-win`), `.git`/`.gitignore`/`.gitattributes` na raiz.
+  `data/`, `research/results/` e `logs/` ficam de fora por serem regeneraveis;
+  `state/live_state.json` e o lock ficam de fora por serem estado de processo,
+  nao do projeto. Uma segunda auditoria externa (05/08, a noite) encontrou esta
+  mesma secao ainda dizendo "nao ha .git" horas depois do repo criado -- prova
+  viva de que atualizar o CLAUDE.md apos mexer em algo relevante nao e opcional.
+* `state.entries_today` (agregado) conta entradas do dia inclusive de
+  execucoes descartadas (ex.: as da conta errada em 05/08). O gate real por
+  perna e `legs_done[family]` (persistido desde a correcao do item C1 abaixo),
+  nao o agregado -- que serve so para exibicao.
 * O motor entra em loop de 60s nos fins de semana em vez de sair. So importa se
   alguem subir manualmente no sabado -- a tarefa so roda em dia util.

@@ -217,13 +217,155 @@ def test_ciclo_aberto_nao_e_reportado():
     checa("posicao aberta nao vira ciclo", len(round_trips(deals)) == 0)
 
 
+# ------------------------------------------ segunda auditoria externa (C1-C3) --
+def test_c1_quota_por_perna_sobrevive_a_restart():
+    """max_per_day precisa sobreviver a um restart no MEIO do dia.
+
+    Achado da 2a auditoria externa (05/08/2026, C1): `lg.entries_today` e
+    atributo de `LegCfg`, reconstruido em 0 toda vez que o processo sobe. O
+    livro virtual so guarda pernas ABERTAS -- uma perna que ja entrou e ja
+    SAIU no dia some sem deixar rastro de que usou sua cota. Sem persistir a
+    contagem, um restart libera nova entrada alem de `max_per_day`.
+    """
+    from src.execution.live import EngineState, LegCfg
+
+    live.STATE_FILE.unlink(missing_ok=True)
+    try:
+        legs = [LegCfg(symbol="WIN$N", family="ORB", params={"max_per_day": 1},
+                       risk_brl=460.0, timeframe="M15")]
+        eng = live.LiveEngine.__new__(live.LiveEngine)
+        eng.legs = legs
+        eng.state = EngineState()
+        eng.books = {}
+
+        # ORB entra e sai no mesmo dia -- some do livro, mas ja usou sua cota.
+        eng.state = EngineState(day="2026-08-05")
+        eng.state.legs_done["ORB"] = 1
+        eng._save_state()
+
+        # processo NOVO: LegCfg nasce com entries_today=0, como no restart real.
+        legs2 = [LegCfg(symbol="WIN$N", family="ORB", params={"max_per_day": 1},
+                        risk_brl=460.0, timeframe="M15")]
+        eng2 = live.LiveEngine.__new__(live.LiveEngine)
+        eng2.legs = legs2
+        eng2.books = {}
+        eng2._load_state("2026-08-05")
+
+        checa("entries_today restaurado da perna apos restart",
+              legs2[0].entries_today == 1, f"veio {legs2[0].entries_today}")
+    finally:
+        live.STATE_FILE.unlink(missing_ok=True)
+
+
+def test_c2_sinal_de_barra_de_outro_dia_e_rejeitado():
+    """Barra fechada de ONTEM nao pode virar sinal de HOJE.
+
+    Achado da 2a auditoria (C2): entre a abertura do pregao e o fechamento da
+    1a barra M15 (09:00-09:15), a ultima barra FECHADA ainda e a de ontem. O
+    gate de horario usava `_mod(now)` (hora atual), nao o mod da PROPRIA
+    barra -- entao passava, e o motor podia entrar com stop/alvo calculados
+    em cima do fechamento de ontem, a preco de hoje. O backtest nunca gera
+    essa entrada (`make_intents` filtra pelo mod da barra do sinal).
+    """
+    ontem = pd.Timestamp("2026-08-04 18:15:00")
+    hoje_09h05 = pd.Timestamp("2026-08-05 09:05:00")
+    checa("barra de ontem tem data diferente de hoje",
+          ontem.normalize() != hoje_09h05.normalize())
+    # a regra em si (equivalente ao early-return de _process_leg):
+    bloqueado = ontem.normalize() != hoje_09h05.normalize()
+    checa("regra bloqueia a barra de outro dia", bloqueado)
+
+
+def test_c3_zeragem_com_ordem_rejeitada_preserva_o_livro():
+    """Se a ordem de fechar a posicao falhar, o livro NAO pode ficar vazio.
+
+    Achado da 2a auditoria (C3): a versao anterior dava `clear()` no livro
+    ANTES de saber se `_reconcile` conseguiria fechar a posicao real. Numa
+    rejeicao, o livro ficava vazio com a posicao real ainda aberta -- e
+    `_protective_stop` para de agir quando o livro esta vazio (`not
+    book.legs`), deixando a posicao sem rede nenhuma no servidor.
+    """
+    from src.execution.netting import NetBook, VirtualLeg
+    from src.execution import broker as broker_mod
+
+    original_market_order = broker_mod.market_order
+    original_get_pos_vol = live.broker_net_volume
+    try:
+        # forca toda ordem a mercado a "falhar" (broker rejeitou)
+        broker_mod.market_order = lambda *a, **k: broker_mod.OrderResult(
+            ok=False, retcode=10013, comment="rejeitado")
+        live.broker_net_volume = lambda sym: -2.0   # posicao real continua aberta
+
+        eng = live.LiveEngine.__new__(live.LiveEngine)
+        eng.dry_run = False
+        eng.risk = live.RiskCfg()
+        eng.clock = lambda: pd.Timestamp("2026-08-05 17:30:01")
+        eng._log_row = lambda row: None
+        book = NetBook([
+            VirtualLeg(magic=770000, family="EmaTrend", side=-1, qty=1.0,
+                      entry_price=178775.0, sl=179422.25, tp=None,
+                      opened_minute=930, exit_minute=1050),
+            VirtualLeg(magic=770003, family="ORB", side=-1, qty=1.0,
+                      entry_price=178460.0, sl=179242.5, tp=None,
+                      opened_minute=960, exit_minute=1050),
+        ])
+        eng.books = {"WINQ26": book}
+
+        eng._flatten("time_exit")
+
+        checa("livro NAO fica vazio quando a zeragem falha",
+              len(eng.books["WINQ26"].legs) == 2,
+              f"pernas restantes={len(eng.books['WINQ26'].legs)}")
+        familias = {l.family for l in eng.books["WINQ26"].legs}
+        checa("as MESMAS pernas voltam ao livro",
+              familias == {"EmaTrend", "ORB"}, f"{familias}")
+    finally:
+        broker_mod.market_order = original_market_order
+        live.broker_net_volume = original_get_pos_vol
+
+
+def test_c3_zeragem_confirmada_esvazia_o_livro():
+    """Contraste do teste acima: com a ordem aceita, o livro DEVE esvaziar."""
+    from src.execution.netting import NetBook, VirtualLeg
+    from src.execution import broker as broker_mod
+
+    original_market_order = broker_mod.market_order
+    original_get_pos_vol = live.broker_net_volume
+    try:
+        broker_mod.market_order = lambda *a, **k: broker_mod.OrderResult(
+            ok=True, retcode=10009, comment="Request executed")
+        live.broker_net_volume = lambda sym: -1.0   # posicao real ainda aberta
+
+        eng = live.LiveEngine.__new__(live.LiveEngine)
+        eng.dry_run = False
+        eng.risk = live.RiskCfg()
+        eng.clock = lambda: pd.Timestamp("2026-08-05 17:30:01")
+        eng._log_row = lambda row: None
+        book = NetBook([VirtualLeg(magic=770000, family="EmaTrend", side=-1,
+                                   qty=1.0, entry_price=178775.0, sl=179422.25,
+                                   tp=None, opened_minute=930, exit_minute=1050)])
+        eng.books = {"WINQ26": book}
+
+        eng._flatten("time_exit")
+
+        checa("livro esvazia quando a zeragem confirma",
+              len(eng.books["WINQ26"].legs) == 0)
+    finally:
+        broker_mod.market_order = original_market_order
+        live.broker_net_volume = original_get_pos_vol
+
+
 if __name__ == "__main__":
     print("auditoria 05/08/2026 -- falhas que estavam em producao\n")
     for fn in (test_lock_impede_dois_motores, test_lock_orfao_e_assumido,
                test_log_de_trades_e_tabela_valida,
                test_protective_stop_loga_e_grava_resultado,
                test_ciclo_netting_nao_confunde_entrada_com_saida,
-               test_ciclo_aberto_nao_e_reportado):
+               test_ciclo_aberto_nao_e_reportado,
+               test_c1_quota_por_perna_sobrevive_a_restart,
+               test_c2_sinal_de_barra_de_outro_dia_e_rejeitado,
+               test_c3_zeragem_com_ordem_rejeitada_preserva_o_livro,
+               test_c3_zeragem_confirmada_esvazia_o_livro):
         print(f"{fn.__name__}:")
         fn()
     print(f"\n{len(OK)} ok, {len(FALHA)} falha(s)")

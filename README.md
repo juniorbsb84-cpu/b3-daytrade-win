@@ -170,7 +170,7 @@ src/execution/    broker (MT5), livro netting, motor ao vivo, configuracao
 src/monitor/      relatorio diario e conferencia de custo realizado
 research/         varredura, painel, Monte Carlo, congelamento de config
 scripts/          pontos de entrada numerados, na ordem de uso
-tests/            25 testes: motor, netting, vazamento, config, paridade ao vivo
+tests/            52 testes: motor, netting, vazamento, config, paridade ao vivo, auditoria
 ```
 
 ### Peca central: a conta e NETTING
@@ -213,7 +213,8 @@ python tests/test_engine.py             # 8 testes do motor
 python tests/test_netting.py            # 10 testes do livro de pernas virtuais
 python tests/test_no_lookahead.py       # 3 testes de vazamento de futuro
 python tests/test_config_roundtrip.py   # 2 testes de fidelidade da config
-python tests/test_live_parity.py        # 2 testes de paridade backtest x ao vivo
+python tests/test_live_parity.py        # 2 testes de paridade backtest x ao vivo (M15)
+python tests/test_auditoria.py          # 27 testes das falhas achadas em auditoria
 python scripts/03_run_sweep.py          # varredura ampla (6 familias x 61 ativos)
 python scripts/04_win_portfolio.py      # carteira no instrumento vencedor
 python scripts/05_montecarlo.py         # distribuicao nula com a busca inteira
@@ -236,24 +237,33 @@ powershell -ExecutionPolicy Bypass -File scripts\install_scheduled_tasks.ps1
 
 ## 5. O que esta configurado
 
-`config/live_config.json` -- WIN$N em M15, risco agregado de R$3.000 por trade:
+`config/live_config.json` -- WIN$N em M15, **banca de referencia R$5.000**
+(desde 05/08/2026), 1 contrato por perna (`max_qty`), 4 pernas cortadas por
+orcamento de risco agregado (teto de 15% da banca, nao por performance):
 
-| Familia | peso | risco | Sharpe de treino | n trades |
-|---|---:|---:|---:|---:|
-| BarMomentum | 0,26 | R$ 791 | 0,87 | 377 |
-| GapPlay | 0,20 | R$ 599 | 0,75 | 634 |
-| VWAPRevert | 0,19 | R$ 559 | 0,35 | 494 |
-| EmaTrend | 0,17 | R$ 501 | 0,87 | 464 |
-| ORB | 0,09 | R$ 282 | 1,02 | 1.155 |
-| VolBreak | 0,09 | R$ 268 | 1,00 | 816 |
+| Familia | risk_brl | max_qty |
+|---|---:|---:|
+| ORB | R$ 460 | 1 |
+| VolBreak | R$ 350 | 1 |
+| VWAPRevert | R$ 300 | 1 |
+| EmaTrend | R$ 300 | 1 |
 
-Limites: kill switch diario R$6.000 (o pior dia fora da amostra foi R$-858 na
-escala de R$900, ou ~R$-2.860 nesta), rede de stop de catastrofe em R$4.000 de
-prejuizo aberto, teto de 60 contratos liquidos, zeragem as 17:30.
+BarMomentum e GapPlay ficaram de fora: com 1 contrato -- o minimo indivisivel
+do WIN -- as 6 pernas originais somam risco agregado acima do orcamento e a
+serie historica ZERA uma banca de R$5.000 (ver `CLAUDE.md`). A config de 6
+pernas com R$3.000 de risco esta preservada em
+`config/live_config_6pernas_R3000_backup_2026-08-05.json`.
 
-**As tarefas agendadas nao estao instaladas.** Registrar envio automatico de
-ordens sem ninguem por perto e configuracao persistente da maquina -- ficou
-como decisao explicita de quem opera, com o instalador pronto acima.
+Limites: kill switch diario R$450 (9% da banca), rede de stop de catastrofe em
+R$1.400 de prejuizo aberto (28%), teto de 4 contratos liquidos, zeragem as
+17:30. Dimensionamento e fonte unica da verdade em `src/execution/sizing.py`.
+
+**As tarefas agendadas estao instaladas** (`scripts/install_scheduled_tasks.ps1`):
+motor ao vivo (seg-sex 10:05), relatorio diario (18:30), manutencao semanal
+(sabado 09:00) e o harvester L2 do book (seg-sex 08:55). O motor envia ordem em
+conta demo -- ver `CLAUDE.md` para o estado operacional atualizado e a divida
+de validacao (o Monte Carlo OOS existente vale para a carteira de 6 pernas, nao
+para esta de 4).
 
 ---
 

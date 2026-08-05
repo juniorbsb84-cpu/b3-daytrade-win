@@ -185,12 +185,24 @@ class LiveEngine:
 
     # ------------------------------------------------------------ estado ---
     def _load_state(self, today: str) -> None:
+        """Carrega o estado do dia -- inclusive QUANTAS VEZES cada perna ja entrou.
+
+        Auditoria externa de 05/08/2026 (C1): `lg.entries_today` e atributo de
+        instancia de `LegCfg`, reconstruido do zero (0) toda vez que o processo
+        sobe. O livro virtual (`state.book`) so guarda pernas ainda ABERTAS --
+        uma perna que ja entrou e ja SAIU no dia some do livro sem deixar
+        rastro. Sem persistir a contagem em `legs_done`, um restart no meio do
+        pregao zera `max_per_day` de toda perna ja fechada, permitindo nova
+        entrada alem da cota diaria.
+        """
         if STATE_FILE.exists():
             try:
                 raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
                 if raw.get("day") == today:
                     self.state = EngineState(**raw)
                     self._restore_books()
+                    for lg in self.legs:
+                        lg.entries_today = int(self.state.legs_done.get(lg.family, 0))
                     return
             except Exception:  # noqa: BLE001
                 log.exception("estado corrompido -- recomecando o dia")
@@ -316,17 +328,22 @@ class LiveEngine:
         return False
 
     # -------------------------------------------------------- reconciliar ---
-    def _reconcile(self, sym: str) -> None:
+    def _reconcile(self, sym: str) -> bool:
+        """Manda a ordem de diferenca. Devolve True se a posicao real ja bate
+        (ou ficou batendo) com o alvo do livro virtual, False se uma ordem
+        necessaria falhou -- para quem chama saber que a posicao real NAO
+        mudou como esperado (ver `_flatten`).
+        """
         book = self.books.get(sym)
         alvo = book.target_net() if book else 0.0
         atual = broker_net_volume(sym)
         delta = alvo - atual
         if abs(delta) < 1e-9:
-            return
+            return True
         if abs(alvo) > self.risk.max_contratos_liquidos:
             log.error("posicao alvo %.0f acima do teto %.0f -- nao envia",
                       alvo, self.risk.max_contratos_liquidos)
-            return
+            return False
         side = 1 if delta > 0 else -1
         vol = abs(delta)
         log.info("reconciliando %s: alvo=%.0f atual=%.0f -> ordem %s %.0f",
@@ -334,7 +351,7 @@ class LiveEngine:
         if self.dry_run:
             self._log_row({"ts": self.clock(), "evento": "reconcile_dry", "symbol": sym,
                            "alvo": alvo, "atual": atual, "delta": delta})
-            return
+            return True
         r = broker.market_order(sym, side, vol, magic=MAGIC_BASE, comment="reconcile")
         self._log_row({"ts": self.clock(), "evento": "reconcile", "symbol": sym,
                        "alvo": alvo, "atual": atual, "delta": delta,
@@ -342,6 +359,7 @@ class LiveEngine:
                        "comment": r.comment})
         if not r.ok:
             log.error("reconciliacao falhou em %s: %s %s", sym, r.retcode, r.comment)
+        return r.ok
 
     def _protective_stop(self, sym: str) -> None:
         """Rede no servidor: stop na posicao liquida pelo prejuizo aberto maximo.
@@ -384,13 +402,33 @@ class LiveEngine:
                       sym, sl, r.retcode, r.comment)
 
     def _flatten(self, motivo: str) -> None:
+        """Zera o livro virtual e manda a ordem que fecha a posicao real.
+
+        Auditoria externa de 05/08/2026 (C3): a versao anterior dava `clear()`
+        no livro incondicionalmente, ANTES de saber se a ordem de fechamento
+        seria aceita. Se `_reconcile` falhasse (rejeicao, desconexao), o livro
+        ja estava vazio -- `_protective_stop` para de agir (`not book.legs`
+        devolve cedo) e o motor passa a achar que esta zerado, exatamente
+        quando a posicao real continua aberta E sem rede nenhuma no servidor.
+        Agora so se da `clear()` de fato quando `_reconcile` confirma sucesso;
+        na falha, as pernas voltam ao livro para a rede de catastrofe seguir
+        protegendo ate a proxima tentativa.
+        """
         for sym, book in list(self.books.items()):
-            saem = book.clear()
-            for l in saem:
-                self._log_row({"ts": self.clock(), "evento": "exit", "symbol": sym,
-                               "family": l.family, "side": l.side, "qty": l.qty,
-                               "entry": l.entry_price, "motivo": motivo})
-            self._reconcile(sym)
+            if not book.legs:
+                continue
+            saem = list(book.legs)
+            book.clear()
+            if self._reconcile(sym):
+                for l in saem:
+                    self._log_row({"ts": self.clock(), "evento": "exit", "symbol": sym,
+                                   "family": l.family, "side": l.side, "qty": l.qty,
+                                   "entry": l.entry_price, "motivo": motivo})
+            else:
+                for l in saem:
+                    book.add(l)
+                log.error("zeragem de %s NAO confirmada -- livro restaurado, "
+                          "posicao real continua aberta e sob protecao", sym)
 
     # ------------------------------------------------------------ sinais ---
     def _process_leg(self, leg: LegCfg, now: pd.Timestamp) -> None:
@@ -407,6 +445,17 @@ class LiveEngine:
         if bars.empty or len(bars) < minimo:
             return
         ts = bars.index[-1]
+        if ts.normalize() != now.normalize():
+            # Auditoria externa de 05/08/2026 (C2): entre a abertura do
+            # pregao e o fechamento da primeira barra M15 (09:00-09:15), a
+            # ultima barra FECHADA ainda e a do dia anterior (ex.: 18:15 de
+            # ontem). O gate abaixo usa o horario ATUAL (`now`), nao o da
+            # barra do sinal -- entao passava, e o motor podia abrir posicao
+            # com stop/alvo calculados em cima do fechamento de ontem, a
+            # preco de hoje. O backtest nunca gera essa entrada: `make_intents`
+            # filtra por `mod` da PROPRIA barra do sinal, e o mod de 18:15
+            # (1095) e sempre maior que qualquer `last_entry_min` usado.
+            return
         if leg.last_bar is not None and ts <= leg.last_bar:
             return
         leg.last_bar = ts
@@ -462,6 +511,7 @@ class LiveEngine:
         book.add(vl)
         leg.entries_today += 1
         self.state.entries_today += 1
+        self.state.legs_done[leg.family] = leg.entries_today
         log.info("SINAL %s %s %s qty=%.0f ref=%.0f sl=%.0f tp=%s",
                  leg.family, leg.trade_symbol, "COMPRA" if side > 0 else "VENDA",
                  qty, ref, vl.sl, f"{vl.tp:.0f}" if vl.tp else "-")

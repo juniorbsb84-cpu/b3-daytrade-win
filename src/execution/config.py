@@ -24,7 +24,7 @@ def save(legs: list[LegCfg], risk: RiskCfg, meta: dict | None = None) -> None:
 def load() -> tuple[list[LegCfg], RiskCfg, dict]:
     if not LIVE_CONFIG.exists():
         raise FileNotFoundError(
-            f"{LIVE_CONFIG} nao existe -- rode scripts/04_select_portfolio.py")
+            f"{LIVE_CONFIG} nao existe -- rode scripts/06_finalize_config.py")
     raw = json.loads(LIVE_CONFIG.read_text(encoding="utf-8"))
     legs = [LegCfg(symbol=l["symbol"], family=l["family"], params=l["params"],
                    risk_brl=float(l["risk_brl"]),
