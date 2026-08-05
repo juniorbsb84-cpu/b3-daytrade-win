@@ -88,11 +88,22 @@ desenho anterior, valido so em conta hedging, e foi removido.
    vem do broker: as ordens de reconciliacao saem todas com `magic=MAGIC_BASE`,
    entao so o livro virtual (`logs/trades_live.csv`) sabe qual estrategia
    causou cada fill.
+7. **`_protective_stop()` precisa PROVAR que registrou o stop, nao so tentar.**
+   E a UNICA protecao que sobrevive ao motor cair -- os stops das pernas so
+   existem no livro virtual, avaliados em memoria. Em 05/08/2026, com posicao
+   aberta 15:30-17:30, o historico de ordens da corretora nao mostrava NENHUMA
+   acao `TRADE_ACTION_SLTP`, e a funcao nao logava nada em caso de sucesso: foi
+   impossivel dizer, so pelo log, se a rede de catastrofe (R$1.400) tinha sido
+   de fato registrada na Clear. Corrigido: todo resultado de `set_sltp` agora
+   vira log explicito (sucesso ou `FALHA ... ESTA SEM rede no servidor`) e
+   evento `protective_stop` gravado no CSV com `ok`/`retcode`. **Nao verificado
+   com posicao real apos a correcao** -- proxima vez que houver posicao aberta,
+   confirmar que o evento aparece em `logs/trades_live.csv`.
 
 Todos foram pegos por teste ou auditoria, nao por leitura casual de codigo.
 Mantenha os testes.
 
-## Testes (42, todos devem passar antes de qualquer deploy)
+## Testes (46, todos devem passar antes de qualquer deploy)
 
 | Arquivo | O que trava |
 |---|---|
@@ -101,7 +112,7 @@ Mantenha os testes.
 | `tests/test_no_lookahead.py` (3) | features recalculadas com historico truncado batem valor a valor |
 | `tests/test_config_roundtrip.py` (2) | a config operacional reproduz o sinal do backtest |
 | `tests/test_live_parity.py` (2) | a visao do motor ao vivo == a visao do backtest |
-| `tests/test_auditoria.py` (17) | as falhas da auditoria de 05/08: lock de instancia unica, lock orfao, schema do log de trades, ciclo em conta netting |
+| `tests/test_auditoria.py` (21) | as falhas da auditoria de 05/08: lock de instancia unica, lock orfao, schema do log de trades, stop de catastrofe sem confirmacao, ciclo em conta netting |
 
 Ao mexer em features ou estrategia: rodar `test_live_parity.py` **e** um replay
 de 25 pregoes (`scripts/09_replay_session.py --days 25`) antes de considerar
@@ -118,7 +129,7 @@ python tests/test_netting.py                    # 10 testes do livro virtual
 python tests/test_no_lookahead.py               # 3 testes de vazamento de futuro
 python tests/test_config_roundtrip.py           # 2 testes de config
 python tests/test_live_parity.py                # 2 testes de paridade ao vivo
-python tests/test_auditoria.py                  # 17 testes das falhas da auditoria
+python tests/test_auditoria.py                  # 21 testes das falhas da auditoria
 python scripts/03_run_sweep.py                  # varredura ampla (6 familias x 61 ativos)
 python scripts/04_win_portfolio.py              # carteira no instrumento vencedor
 python scripts/05_montecarlo.py                 # distribuicao nula com a busca inteira

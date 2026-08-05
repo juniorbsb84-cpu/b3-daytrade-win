@@ -139,6 +139,71 @@ def test_ciclo_netting_nao_confunde_entrada_com_saida():
         checa("lado do ciclo e venda", c["side"] == "venda")
 
 
+def test_protective_stop_loga_e_grava_resultado(monkeypatch=None):
+    """A rede de catastrofe precisa provar que foi registrada -- ou que falhou.
+
+    Auditoria de 05/08/2026: com posicao aberta 15:30-17:30, o historico de
+    ordens da corretora nao mostrava NENHUMA acao TRADE_ACTION_SLTP, e a funcao
+    nao logava nada em caso de sucesso -- impossivel dizer, so pelo log, se a
+    rede existia. Este teste finge um `set_sltp` de sucesso e de falha e exige
+    que os dois fiquem registrados no CSV (evento 'protective_stop'), nao so em
+    log solto.
+    """
+    from dataclasses import dataclass
+    from src.execution.netting import NetBook, VirtualLeg
+    from src.execution.live import RiskCfg
+    from src.execution import broker as broker_mod
+
+    @dataclass
+    class PosFake:
+        symbol: str = "WINQ26"
+        sl: float = 0.0
+
+    for ok_esperado in (True, False):
+        destino = Path(__file__).parent / "_tmp_pstop.csv"
+        destino.unlink(missing_ok=True)
+        original_log = live.TRADE_LOG
+        original_get_pos = broker_mod.get_position
+        original_set_sltp = broker_mod.set_sltp
+        original_normalize = broker_mod.normalize_price
+        live.TRADE_LOG = destino
+        broker_mod.get_position = lambda sym, magic=None: PosFake()
+        broker_mod.normalize_price = lambda sym, px: px
+        broker_mod.set_sltp = lambda pos, sl, tp: broker_mod.OrderResult(
+            ok=ok_esperado, retcode=10009 if ok_esperado else 10013,
+            comment="Request executed" if ok_esperado else "rejeitado")
+
+        try:
+            eng = live.LiveEngine.__new__(live.LiveEngine)
+            eng.dry_run = False
+            eng.risk = RiskCfg()
+            eng.quote_fn = lambda sym: (178100.0, 178105.0)
+            book = NetBook([VirtualLeg(magic=770000, family="EmaTrend", side=-1,
+                                       qty=1.0, entry_price=178775.0, sl=179422.25,
+                                       tp=None, opened_minute=930, exit_minute=1050)])
+            eng.books = {"WINQ26": book}
+            eng._research_symbol = lambda sym: "WIN$N"
+            eng._quote = lambda sym: eng.quote_fn(sym)
+            eng.clock = lambda: pd.Timestamp("2026-08-05 16:00:00")
+
+            eng._protective_stop("WINQ26")
+
+            df = pd.read_csv(destino) if destino.exists() else pd.DataFrame()
+            evs = df[df["evento"] == "protective_stop"] if len(df) else df
+            checa(f"protective_stop grava evento (ok={ok_esperado})", len(evs) == 1,
+                  f"linhas={len(evs)}")
+            if len(evs):
+                checa(f"grava o resultado real (ok={ok_esperado})",
+                      bool(evs.iloc[0]["ok"]) == ok_esperado,
+                      f"ok gravado={evs.iloc[0]['ok']!r}")
+        finally:
+            live.TRADE_LOG = original_log
+            broker_mod.get_position = original_get_pos
+            broker_mod.set_sltp = original_set_sltp
+            broker_mod.normalize_price = original_normalize
+            destino.unlink(missing_ok=True)
+
+
 def test_ciclo_aberto_nao_e_reportado():
     """Posicao ainda aberta nao pode virar 'ciclo fechado' com PnL parcial."""
     import MetaTrader5 as mt5
@@ -156,6 +221,7 @@ if __name__ == "__main__":
     print("auditoria 05/08/2026 -- falhas que estavam em producao\n")
     for fn in (test_lock_impede_dois_motores, test_lock_orfao_e_assumido,
                test_log_de_trades_e_tabela_valida,
+               test_protective_stop_loga_e_grava_resultado,
                test_ciclo_netting_nao_confunde_entrada_com_saida,
                test_ciclo_aberto_nao_e_reportado):
         print(f"{fn.__name__}:")

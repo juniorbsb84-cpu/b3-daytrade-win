@@ -344,7 +344,16 @@ class LiveEngine:
             log.error("reconciliacao falhou em %s: %s %s", sym, r.retcode, r.comment)
 
     def _protective_stop(self, sym: str) -> None:
-        """Rede no servidor: stop na posicao liquida pelo prejuizo aberto maximo."""
+        """Rede no servidor: stop na posicao liquida pelo prejuizo aberto maximo.
+
+        Esta e a UNICA protecao que sobrevive ao motor cair -- os stops das
+        pernas so existem no livro virtual, avaliados em memoria. Por isso todo
+        resultado de `set_sltp` e logado e gravado no CSV: em 05/08/2026 uma
+        auditoria foi incapaz de confirmar, so pelo log, se esta rede tinha sido
+        de fato registrada na corretora (a funcao nao logava nada em caso de
+        sucesso). Sem essa confirmacao explicita, ninguem sabe se a rede existe
+        ate precisar dela -- tarde demais.
+        """
         book = self.books.get(sym)
         if not book or not book.legs or self.dry_run:
             return
@@ -362,7 +371,17 @@ class LiveEngine:
         sl = broker.normalize_price(sym, sl)
         if pos.sl and abs(pos.sl - sl) < inst.tick_size:
             return
-        broker.set_sltp(pos, sl, None)
+        r = broker.set_sltp(pos, sl, None)
+        self._log_row({"ts": self.clock(), "evento": "protective_stop", "symbol": sym,
+                       "sl": sl, "preco": mid, "ok": r.ok, "retcode": r.retcode,
+                       "comment": r.comment})
+        if r.ok:
+            log.info("stop de catastrofe atualizado em %s: sl=%.0f (rede registrada "
+                     "na corretora)", sym, sl)
+        else:
+            log.error("FALHA ao registrar stop de catastrofe em %s: sl=%.0f "
+                      "retcode=%s %s -- a posicao ESTA SEM rede no servidor",
+                      sym, sl, r.retcode, r.comment)
 
     def _flatten(self, motivo: str) -> None:
         for sym, book in list(self.books.items()):
