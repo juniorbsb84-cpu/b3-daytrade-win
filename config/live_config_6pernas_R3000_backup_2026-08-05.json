@@ -1,0 +1,176 @@
+{
+  "meta": {
+    "gerado_em": "2026-08-04T21:39:45",
+    "risco_total_por_trade": 3000.0,
+    "detalhe": [
+      {
+        "symbol": "WIN$N",
+        "family": "ORB",
+        "timeframe": "M15",
+        "risk_brl": 282.11,
+        "sharpe_treino": 1.021,
+        "n_trades_treino": 1155,
+        "peso": 0.094,
+        "chave": "ORB|buf_atr=0.25|exit_min=1050|last_entry_min=960|max_per_day=1|or_min=60|rr=3.0|stop_mode=atr2|trend=none"
+      },
+      {
+        "symbol": "WIN$N",
+        "family": "VolBreak",
+        "timeframe": "M15",
+        "risk_brl": 268.1,
+        "sharpe_treino": 1.003,
+        "n_trades_treino": 816,
+        "peso": 0.089,
+        "chave": "VolBreak|exit_min=1050|k=0.5|last_entry_min=960|max_per_day=1|rr=0.0|start_min=615|stop_atr=1.5|trend=none"
+      },
+      {
+        "symbol": "WIN$N",
+        "family": "VWAPRevert",
+        "timeframe": "M15",
+        "risk_brl": 558.98,
+        "sharpe_treino": 0.354,
+        "n_trades_treino": 494,
+        "peso": 0.186,
+        "chave": "VWAPRevert|exit_min=1050|exit_mode=rr1|k_sd=2.5|last_entry_min=990|max_per_day=2|start_min=630|stop_atr=1.5|trend=d20"
+      },
+      {
+        "symbol": "WIN$N",
+        "family": "BarMomentum",
+        "timeframe": "M15",
+        "risk_brl": 790.89,
+        "sharpe_treino": 0.866,
+        "n_trades_treino": 377,
+        "peso": 0.264,
+        "chave": "BarMomentum|exit_min=1050|k_atr=1.75|last_entry_min=990|lookback=3|max_per_day=2|rr=2.0|stop_atr=2.5|vol_min=1.5"
+      },
+      {
+        "symbol": "WIN$N",
+        "family": "GapPlay",
+        "timeframe": "M15",
+        "risk_brl": 598.82,
+        "sharpe_treino": 0.748,
+        "n_trades_treino": 634,
+        "peso": 0.2,
+        "chave": "GapPlay|direction=fade|entry_min=630|exit_min=1050|last_entry_min=990|max_per_day=1|min_gap_atr=1.0|rr=1.5|stop_atr=3.0"
+      },
+      {
+        "symbol": "WIN$N",
+        "family": "EmaTrend",
+        "timeframe": "M15",
+        "risk_brl": 501.09,
+        "sharpe_treino": 0.873,
+        "n_trades_treino": 464,
+        "peso": 0.167,
+        "chave": "EmaTrend|exit_min=1050|fast=21|last_entry_min=990|max_per_day=2|rr=2.0|slow=50|start_min=630|stop_atr=1.5|trend=none"
+      }
+    ]
+  },
+  "risk": {
+    "max_legs_abertas": 6,
+    "max_contratos_liquidos": 60.0,
+    "daily_loss_limit_brl": 6000.0,
+    "daily_profit_lock_brl": 0.0,
+    "max_open_loss_brl": 4000.0,
+    "exit_all_minute": 1050,
+    "session_start_minute": 545
+  },
+  "legs": [
+    {
+      "symbol": "WIN$N",
+      "family": "ORB",
+      "params": {
+        "buf_atr": 0.25,
+        "exit_min": 1050,
+        "last_entry_min": 960,
+        "max_per_day": 1,
+        "or_min": 60,
+        "rr": 3.0,
+        "stop_mode": "atr2",
+        "trend": "none"
+      },
+      "risk_brl": 282.11,
+      "timeframe": "M15"
+    },
+    {
+      "symbol": "WIN$N",
+      "family": "VolBreak",
+      "params": {
+        "exit_min": 1050,
+        "k": 0.5,
+        "last_entry_min": 960,
+        "max_per_day": 1,
+        "rr": 0.0,
+        "start_min": 615,
+        "stop_atr": 1.5,
+        "trend": "none"
+      },
+      "risk_brl": 268.1,
+      "timeframe": "M15"
+    },
+    {
+      "symbol": "WIN$N",
+      "family": "VWAPRevert",
+      "params": {
+        "exit_min": 1050,
+        "exit_mode": "rr1",
+        "k_sd": 2.5,
+        "last_entry_min": 990,
+        "max_per_day": 2,
+        "start_min": 630,
+        "stop_atr": 1.5,
+        "trend": "d20"
+      },
+      "risk_brl": 558.98,
+      "timeframe": "M15"
+    },
+    {
+      "symbol": "WIN$N",
+      "family": "BarMomentum",
+      "params": {
+        "exit_min": 1050,
+        "k_atr": 1.75,
+        "last_entry_min": 990,
+        "lookback": 3,
+        "max_per_day": 2,
+        "rr": 2.0,
+        "stop_atr": 2.5,
+        "vol_min": 1.5
+      },
+      "risk_brl": 790.89,
+      "timeframe": "M15"
+    },
+    {
+      "symbol": "WIN$N",
+      "family": "GapPlay",
+      "params": {
+        "direction": "fade",
+        "entry_min": 630,
+        "exit_min": 1050,
+        "last_entry_min": 990,
+        "max_per_day": 1,
+        "min_gap_atr": 1.0,
+        "rr": 1.5,
+        "stop_atr": 3.0
+      },
+      "risk_brl": 598.82,
+      "timeframe": "M15"
+    },
+    {
+      "symbol": "WIN$N",
+      "family": "EmaTrend",
+      "params": {
+        "exit_min": 1050,
+        "fast": 21,
+        "last_entry_min": 990,
+        "max_per_day": 2,
+        "rr": 2.0,
+        "slow": 50,
+        "start_min": 630,
+        "stop_atr": 1.5,
+        "trend": "none"
+      },
+      "risk_brl": 501.09,
+      "timeframe": "M15"
+    }
+  ]
+}

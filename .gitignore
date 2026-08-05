@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ------------------------------------------------------------------ dados ---
+# Tudo aqui e REGENERAVEL a partir do terminal MT5 ou da B3, e pesa 119 MB.
+# Versionar dado de mercado incha o repo e nao ajuda a reproduzir nada: o que
+# reproduz e o codigo + a config congelada.
+data/raw/
+data/processed/
+data/l2_win/
+data/universe/
+
+# Resultado de varredura/Monte Carlo: 14 MB de parquet, todos reproduziveis
+# rodando os scripts na ordem. O que importa versionar e o script, nao a saida.
+research/results/
+
+# ------------------------------------------------------- runtime / estado ---
+# Estado vivo do motor e o lock de instancia unica: sao do PROCESSO, nao do
+# projeto. Commitar isso faria um clone nascer achando que tem posicao aberta.
+state/live_state.json
+state/live_engine.lock
+
+logs/
+!logs/.gitkeep
+
+# ------------------------------------------------------------------ SO ------
+Thumbs.db
+desktop.ini
+.DS_Store

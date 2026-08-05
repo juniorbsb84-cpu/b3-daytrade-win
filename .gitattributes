@@ -1,0 +1,9 @@
+# Normaliza quebra de linha: LF no repositorio, nativo no disco. Sem isso, cada
+# commit feito no Windows aparece como "arquivo inteiro mudou" e o diff perde a
+# utilidade -- justamente o que se quer preservar num sistema que manda ordem.
+* text=auto eol=lf
+
+*.png binary
+*.parquet binary
+*.db binary
+*.zip binary
