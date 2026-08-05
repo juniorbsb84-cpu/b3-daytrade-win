@@ -253,7 +253,7 @@ Foi esse teto que motivou usar **M15 como base**: 5 anos contra 3,5 em M5.
 
   | Tarefa | Quando | O que faz |
   |---|---|---|
-  | `B3_HarvestWINDiario` | diario 08:00 | PricRpt oficial da B3 -> `win_diario.db` |
+  | `B3_HarvestWINDiario` | diario 08:00 | PricRpt oficial da B3 -> `data/oficial_b3/win_diario.db` |
   | `B3_HarvestL2WIN` | seg-sex 08:55 | book L2 (10 niveis/lado) -> `data/l2_win/` |
   | `B3_MotorAoVivo` | seg-sex 10:05 | motor, **sem `--dry`** (envia ordem em demo) |
   | `B3_RelatorioDiario` | seg-sex 18:30 | relatorio + conferencia de custo |
@@ -278,3 +278,12 @@ Foi esse teto que motivou usar **M15 como base**: 5 anos contra 3,5 em M5.
   nao o agregado -- que serve so para exibicao.
 * O motor entra em loop de 60s nos fins de semana em vez de sair. So importa se
   alguem subir manualmente no sabado -- a tarefa so roda em dia util.
+* **Harvest diario da B3: resolvido em 05/08/2026.** Ate entao o pipeline
+  (`harvest_diario_win.py`) rodava fora do repositorio (`New OpenCode Project`),
+  quebrando reproducibilidade -- apontado pela 2a auditoria externa (C5). Agora
+  `src/ingest/b3_pricrpt.py` + `scripts/14_harvest_win_diario.py` sao copia
+  adaptada, dentro do projeto, escrevendo em `data/oficial_b3/win_diario.db`
+  (fora do git, regeneravel, como o resto de `data/`). Os originais
+  (`extrator_win.py`, `backfill_win.py`, `win_diario.db`) continuam intocados
+  em `New OpenCode Project` -- so a copia de trabalho mudou de lugar, nao o
+  material historico protegido em `EXTRACAO_DADOS_B3.md`.

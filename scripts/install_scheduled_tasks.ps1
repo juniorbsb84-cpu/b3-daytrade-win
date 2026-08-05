@@ -51,25 +51,12 @@ $t4 = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thur
 New-B3Task "B3_HarvestL2WIN" "scripts\13_harvest_l2_win.py" "" $t4 `
     "Captura continua do book L2 (DOM) do contrato vigente do WIN"
 
-# 5) dado oficial diario da B3 (PricRpt) -- FORA deste repositorio de proposito.
-# O pipeline de extracao (extrator_win.py/backfill_win.py) e a documentacao em
-# EXTRACAO_DADOS_B3.md moram em "New OpenCode Project" por decisao explicita do
-# usuario -- nao mover para dentro do projeto. Auditoria externa de 05/08/2026
-# apontou (com razao) que isso quebra reproducibilidade a partir deste repo; a
-# troca e deliberada, nao descuido. Ajuste o caminho se a pasta mudar de lugar.
-$dadosB3 = "$env:USERPROFILE\OneDrive\Documentos\New OpenCode Project\data\harvest_diario_win.py"
-if (Test-Path $dadosB3) {
-    $t5 = New-ScheduledTaskTrigger -Daily -At 08:00
-    $action5 = New-ScheduledTaskAction -Execute $pythonw -Argument "`"$dadosB3`"" `
-        -WorkingDirectory (Split-Path -Parent $dadosB3)
-    $settings5 = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1)
-    Register-ScheduledTask -TaskName "B3_HarvestWINDiario" -Action $action5 -Trigger $t5 `
-        -Settings $settings5 -Description "PricRpt oficial da B3 -> win_diario.db (fora do repo)" `
-        -Force | Out-Null
-    Write-Host "  registrada: B3_HarvestWINDiario"
-} else {
-    Write-Host "  AVISO: $dadosB3 nao encontrado -- B3_HarvestWINDiario NAO registrada"
-}
+# 5) dado oficial diario da B3 (PricRpt) -> data/oficial_b3/win_diario.db.
+# Ate 05/08/2026 este pipeline vivia fora do repositorio (em "New OpenCode
+# Project"); trazido para dentro a pedido explicito -- so a doc de engenharia
+# reversa (EXTRACAO_DADOS_B3.md) continua la, intocada por decisao anterior.
+$t5 = New-ScheduledTaskTrigger -Daily -At 08:00
+New-B3Task "B3_HarvestWINDiario" "scripts\14_harvest_win_diario.py" "" $t5 `
+    "PricRpt oficial da B3 -> data/oficial_b3/win_diario.db"
 
 Write-Host "`npronto. Confira com: Get-ScheduledTask -TaskName 'B3_*'"

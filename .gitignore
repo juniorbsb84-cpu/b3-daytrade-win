@@ -13,6 +13,7 @@ data/raw/
 data/processed/
 data/l2_win/
 data/universe/
+data/oficial_b3/
 
 # Resultado de varredura/Monte Carlo: 14 MB de parquet, todos reproduziveis
 # rodando os scripts na ordem. O que importa versionar e o script, nao a saida.
