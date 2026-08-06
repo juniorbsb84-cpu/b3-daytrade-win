@@ -263,6 +263,29 @@ Foi esse teto que motivou usar **M15 como base**: 5 anos contra 3,5 em M5.
   coexistem sem conflito. O L2 **nao alimenta nada** hoje: e acumulo de dado
   para um eventual modelo futuro.
 
+## Verificado em producao real (06/08/2026)
+
+* **`B3_HarvestWINDiario` funcionou sozinho, sem intervencao.** As 08:00 de
+  06/08 recuperou 05/08 automaticamente -- a B3 publicou o `PR{data}.zip` com
+  ~14h30 de atraso (fechamento 17:30, disponivel so na manha seguinte). E o
+  primeiro ciclo completo do harvester desde que foi trazido para dentro do
+  projeto; confirma que a logica de "buscar todos os pendentes" (nao so
+  "ontem") funciona como desenhado.
+* **A correcao do relatorio netting (`round_trips` por ciclo) passou na
+  execucao automatica real das 18:30 de 05/08**, nao so no teste manual: 1
+  ciclo, R$191,00, 100% de acerto -- os mesmos numeros que a verificacao
+  manual tinha dado horas antes.
+* **`B3_HarvestL2WIN` ainda NAO teve um pregao completo.** A tarefa foi criada
+  05/08 depois das 08:55 (hora do gatilho), entao nunca disparou nesse dia --
+  o arquivo `l2_win_20260805.db` tem so os 56 snapshots do teste manual de 20s.
+  A primeira captura de sessao inteira e hoje, 06/08 08:55-18:10.
+* **A confirmacao do stop de catastrofe (item 7 acima) e do schema fixo do log
+  (item 5) continuam SEM teste com posicao real.** `logs/trades_live.csv` nao
+  existe ainda -- o arquivo antigo foi arquivado como
+  `trades_live_ate_2026-08-05_schema_quebrado.csv` antes da correcao entrar
+  em vigor, e nenhum pregao rodou com o codigo corrigido do inicio ao fim
+  desde entao. Confirmar nos dois na proxima vez que o motor abrir posicao.
+
 ## Divida tecnica conhecida
 
 * **Controle de versao: resolvido em 05/08/2026.** Repositorio privado no
